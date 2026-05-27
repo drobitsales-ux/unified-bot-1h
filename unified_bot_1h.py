@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
-║  UNIFIED SMC + RSI MEAN REVERSION BOT  v10.0  PROP FIRM EDITION     ║
+║  UNIFIED SMC + RSI 1H MEAN REVERSION BOT  v10 EDITION     ║
 ║  BingX Perpetual Futures | Render-Ready | $10k → $100k Path         ║
 ║                                                                      ║
 ║  СТРАТЕГИИ:                                                          ║
@@ -2375,7 +2375,7 @@ async def main():
         pass
 
     await tg(
-        f"🟢 <b>Unified SMC+RSI Bot v10.0 PROP</b> запущен\n"
+        f"🟢 <b>Unified 1H SMC+RSI Bot v10</b> запущен\n"
         f"Риск: {RISK_PER_TRADE*100:.2f}%/сделку  "
         f"Max поз: {MAX_TOTAL_POS}  Плечо: {LEVERAGE}x\n"
         f"Сессия: 06:30–17:00 UTC (Киев 09:30–20:00)\n"
