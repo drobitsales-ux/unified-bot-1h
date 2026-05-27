@@ -2387,13 +2387,13 @@ async def main():
         pass
 
     await tg(
-        f"🟢 <b>Unified SMC+RSI Bot v10.0 PROP</b> запущен\n"
+        f"🟢 <b>Unified 1H SMC+RSI Bot v10.0 PROP</b> запущен\n"
         f"Риск: {RISK_PER_TRADE*100:.2f}%/сделку  "
         f"Max поз: {MAX_TOTAL_POS}  Плечо: {LEVERAGE}x\n"
         f"Сессия: 06:30–17:00 UTC (Киев 09:30–20:00)\n"
         f"Circuit breaker: при DD >{DAILY_DD_LIMIT*100:.1f}%/день"
     )
-    logging.info("🚀 Unified SMC+RSI Bot v10.0 [1h] started")
+    logging.info("🚀 Unified 1H SMC+RSI Bot v10.0 started")
 
     cycle = 0
     try:
