@@ -46,7 +46,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 # ═══════════════════════════════════════════════════════
 #  КОНФИГУРАЦИЯ
 # ═══════════════════════════════════════════════════════
-DB_PATH       = '/data/bot.db' if os.path.exists('/data') else 'bot.db'
+DB_PATH       = '/data/bot_1h.db' if os.path.exists('/data') else 'bot_1h.db'  # [1h] отдельная БД позиций
 TOKEN         = os.getenv('TELEGRAM_TOKEN')
 # ── Telegram Chat ID ────────────────────────────────────
 # Читаем из нескольких возможных названий переменной.
@@ -2107,7 +2107,7 @@ async def sync_positions_with_exchange() -> int:
 # ═══════════════════════════════════════════════════════
 #  TRADE LOGGER — SQLite + CSV экспорт
 # ═══════════════════════════════════════════════════════
-TRADES_DB = '/tmp/trades_1h.db'  # [1h] отдельная БД
+TRADES_DB = '/data/trades_1h.db' if os.path.exists('/data') else '/tmp/trades_1h.db'  # [DISK] на /data переживает деплой
 
 def _init_trades_db():
     """Создаёт таблицу trades если не существует."""
