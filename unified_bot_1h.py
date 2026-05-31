@@ -1124,12 +1124,15 @@ async def rsi_signal(sym: str, btc_ctx: dict):
         return None, 'vol'
     vol_ratio = float(v[-2]) / avg_v
     # Минимальный объём для подтверждения сигнала
-    if vol_ratio < 2.0 or vol_ratio > 12.0:
+    if vol_ratio < 1.5 or vol_ratio > 8.0:  # [V3] 2.0-12.0 → 1.5-8.0
         return None, 'vol'
     # Объём-фильтр для RSI Mean Reversion
     # Vol>3.5x — предварительная проверка (sma_dist пока не вычислен)
     # Если Vol очень высокий — ставим флаг, финальное решение после SMA
     _high_vol = vol_ratio > 3.5  # флаг: финальная проверка с SMA ниже
+    _rsi_not_extreme = 20 < rsi_now < 80
+    if vol_ratio > 5.0 and _rsi_not_extreme:  # [V3] импульс не MR
+        return None, 'vol'
     # Остальные vol-фильтры с sma_dist — после блока SMA200
 
     # RSI текущий и предыдущий (только закрытые свечи)
@@ -1226,13 +1229,18 @@ async def rsi_signal(sym: str, btc_ctx: dict):
     # ADX > 30 = сильный тренд, MR против тренда = риск
     # ADX < 30 = подходит для возврата к среднему
     adx = calc_adx(h, l, c, 14)
-    if adx > 30:
+    if adx > 25:  # [V3 1H] 30→25
         return None, 'adx_trend'
 
     rsi_extreme_long  = rsi_now <= 20
     rsi_extreme_short = rsi_now >= 80
 
+    # [V3] Candle confirmation
+    last_body = float(c[-1]) - float(c[-2])
+
     if (rsi_now <= RSI_LONG_MAX) and (bull_pat or rsi_extreme_long):
+        if last_body < 0 and not rsi_extreme_long:
+            return None, 'candle'
         # [R-FIX-6] Flat BTC больше не блокирует лонг
         if btc_trend == 'Short' and not altseason:
             return None, 'trend'
@@ -1240,12 +1248,14 @@ async def rsi_signal(sym: str, btc_ctx: dict):
         # rsi_now < 25 уже подтверждает перепроданность — hook опциональный
         if rsi_now > rsi_prev + 3.5:  # RSI растёт быстро — не разворот
             return None, 'hook'
+        if rsi_now - rsi_prev < 1.5:  # [V3] мин. разворот 1.5 pts
+            return None, 'hook'
         # [MOMENTUM-FILTER] Аномальный дамп — нельзя лонговать
         if (rsi_now < 12 and vol_ratio > 2.5) or (rsi_now < 25 and vol_ratio > 3.0):
             return None, 'momentum'
         if sma_dist > 2.0 or sma_dist < -15.0:   # [FIX-SMA] смягчено: -1→+2%, -8→-15%
             return None, 'sma_range'
-        if vwap_dist > -1.2:              # должен быть под VWAP
+        if vwap_dist > -1.0:  # [V3 1H] -1.2→-1.0%: под VWAP (1H чуть шире)
             return None, 'vwap'
         # [DYNAMIC-ATR] SMA-dist > 4% = высокая волатильность → шире SL
         atr_mult = 2.5 if abs(sma_dist) > 4.0 else 1.5
@@ -1257,10 +1267,14 @@ async def rsi_signal(sym: str, btc_ctx: dict):
         mode = 'Long'
 
     elif (rsi_now >= RSI_SHORT_MIN) and (bear_pat or rsi_extreme_short):
+        if last_body > 0 and not rsi_extreme_short:
+            return None, 'candle'
         if btc_trend == 'Long' or altseason:
             return None, 'trend'
         # Hook: RSI в зоне ИЛИ разворачивается
         if rsi_now < rsi_prev - 3.5:  # RSI падает быстро — не разворот
+            return None, 'hook'
+        if rsi_prev - rsi_now < 1.5:  # [V3] мин. разворот 1.5 pts
             return None, 'hook'
         # [MOMENTUM-FILTER] Аномальный импульс — нельзя шортить
         # Уровень 1: RSI>88 + Vol>2.5x (крайний памп) — DASH RSI 92, Vol 2.9x
@@ -1269,7 +1283,7 @@ async def rsi_signal(sym: str, btc_ctx: dict):
             return None, 'momentum'
         if sma_dist < -2.0 or sma_dist > 15.0:  # [FIX-SMA] смягчено: 1→-2%, 8→15%
             return None, 'sma_range'
-        if vwap_dist < 1.2:
+        if vwap_dist < 1.0:  # [V3 1H] 1.2→1.0%
             return None, 'vwap'
         # [DYNAMIC-ATR] SMA-dist > 4% = высокая волатильность → шире SL
         atr_mult = 2.5 if abs(sma_dist) > 4.0 else 1.5
