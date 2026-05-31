@@ -97,7 +97,9 @@ MIN_LOT_USDT     = 1.0      # Минимальный размер позиции
 # Когда BingX открывает сделку → POST на воркеры со структурой сигнала
 # Добавьте в Render Environment: WORKER_URLS=https://bybit-worker.onrender.com/signal
 # Несколько воркеров через запятую: url1,url2,url3
-_worker_urls: list = []  # [1h] НЕ зеркалит сигналы на Bybit
+_worker_urls: list = [u.strip() for u in
+                      os.getenv('WORKER_URLS', '').split(',') if u.strip()]
+# Render env: WORKER_URLS=https://bybit-worker-1h.onrender.com/signal
 WORKER_SECRET = os.getenv('WORKER_SECRET', 'change-me-secret')  # общий секрет
 
 # ── SMC-параметры ───────────────────────────────────────
@@ -712,7 +714,7 @@ async def oracle_ai(sym: str, strategy: str, mode: str,
             return result
 
     # 3. Локальный скоринг
-    logging.info(f'📊 [{strategy}] {sym} — AI недоступен, используем локальный скоринг')
+    logging.info(f'📊 [{strategy} 1H] {sym} — AI недоступен, используем локальный скоринг')
     return score_setup_local(strategy, mode, ctx)
 
 
@@ -1386,14 +1388,14 @@ async def execute(sym: str, sig: dict, strategy: str,
     # Запрет хеджа: если BCH Short открыт — BCH Long не открываем (и наоборот)
     if any(p['symbol'] == sym and p['direction'] != mode for p in all_pos):
         opp = 'Long' if mode == 'Short' else 'Short'
-        logging.info(f'[{strategy}] {sym}: уже открыт {opp} — {mode} пропущен')
+        logging.info(f'[{strategy} 1H] {sym}: уже открыт {opp} — {mode} пропущен')
         return
 
     # [P-2] Передаём BingX-объём чтобы не блокировать BingX-эксклюзивы
     bingx_vol = sig.get('bingx_vol', 0)
     has_vol = await oracle_volume(sym, bingx_vol)
     if not has_vol:
-        logging.info(f"[{strategy}] {sym}: volume oracle reject (bingx:{bingx_vol:.0f})")
+        logging.info(f"[{strategy} 1H] {sym}: volume oracle reject (bingx:{bingx_vol:.0f})")
         return
 
     extra_ctx = {k: v for k, v in sig.items()
@@ -1402,15 +1404,15 @@ async def execute(sym: str, sig: dict, strategy: str,
     provider = ('Groq' if groq_key and _groq_quota_ok else
                 'Gemini' if (GEMINI_KEY and _gemini_quota_ok) else 'LocalScore')
     logging.info(
-        f'🔔 [{strategy}] {sym} {mode} @ {price:.6f} → AI Oracle [{provider}]'
+        f'🔔 [{strategy} 1H] {sym} {mode} @ {price:.6f} → AI Oracle [{provider}]'
     )
     ai = await oracle_ai(sym, strategy, mode, price, extra_ctx)
     if not ai['ok']:
         thr = 70 if strategy == 'SMC' else 55
         if strategy == 'SMC' and ai['conf'] >= 30:
-            logging.info(f"[{strategy}] {sym}: AI advisory (conf={ai['conf']}) — CHoCH приоритет")
+            logging.info(f"[{strategy} 1H] {sym}: AI advisory (conf={ai['conf']}) — CHoCH приоритет")
         else:
-            logging.info(f"[{strategy}] {sym}: AI reject (conf={ai['conf']}/{thr})")
+            logging.info(f"[{strategy} 1H] {sym}: AI reject (conf={ai['conf']}/{thr})")
             return
 
     # Баланс
@@ -1430,17 +1432,17 @@ async def execute(sym: str, sig: dict, strategy: str,
     qty = risk_usdt / sl_dist
     qty = round(qty, 4)
     if qty <= 0:
-        logging.warning(f'[{strategy}] {sym}: qty={qty} <= 0, пропуск')
+        logging.warning(f'[{strategy} 1H] {sym}: qty={qty} <= 0, пропуск')
         return
 
     # ── MIN/MAX notional guard ─────────────────────────────
     notional_est = qty * price
     if notional_est < 20:   # BingX мин. контракт ~$20
-        logging.info(f'[{strategy}] {sym}: notional ${notional_est:.1f}<$20 — пропуск')
+        logging.info(f'[{strategy} 1H] {sym}: notional ${notional_est:.1f}<$20 — пропуск')
         return
     if notional_est > free_usdt * 0.60:  # не больше 60% свободного баланса
         logging.warning(
-            f'[{strategy}] {sym}: notional ${notional_est:.1f} > 60% '
+            f'[{strategy} 1H] {sym}: notional ${notional_est:.1f} > 60% '
             f'баланса ${free_usdt:.0f} — позиция слишком большая, пропуск'
         )
         return
@@ -1465,7 +1467,7 @@ async def execute(sym: str, sig: dict, strategy: str,
                     'reduceOnly': True}
         )
     except Exception as e:
-        logging.error(f"[{strategy}] Order error {sym}: {e}")
+        logging.error(f"[{strategy} 1H] Order error {sym}: {e}")
         return
 
     rec = {
@@ -1505,7 +1507,7 @@ async def execute(sym: str, sig: dict, strategy: str,
     wknd = ' (Weekend ½)' if is_weekend() else ''
     rr = abs(tp - price) / abs(price - sl)
     msg = (
-        f"{'🟢' if mode=='Long' else '🔴'} <b>[{strategy}] {sym}</b> — {mode}{wknd}\n"
+        f"{'🟢' if mode=='Long' else '🔴'} <b>[{strategy} 1H] {sym}</b> — {mode}{wknd}\n"
         f"Цена: <code>{price:.6f}</code>\n"
         f"SL: <code>{sl:.6f}</code>  TP: <code>{tp:.6f}</code>\n"
         f"RR: <b>1:{rr:.2f}</b>  Риск: <b>${risk_usdt:.2f}</b>\n"
@@ -1514,7 +1516,7 @@ async def execute(sym: str, sig: dict, strategy: str,
         + extra_tg
     )
     await tg(msg)
-    logging.info(f"✅ [{strategy}] {sym} {mode} @ {price:.6f} | SL:{sl:.6f} | Risk:${risk_usdt:.2f}")
+    logging.info(f"✅ [{strategy} 1H] {sym} {mode} @ {price:.6f} | SL:{sl:.6f} | Risk:${risk_usdt:.2f}")
     # Публикуем сигнал воркерам (копи-трейдинг на Bybit и др.)
     asyncio.create_task(publish_to_workers(sym, mode, price, sl, tp, strategy, risk_usdt))
 
@@ -1577,7 +1579,7 @@ async def monitor_all():
             pos_value_usdt = real_qty * curr_p
             if pos_value_usdt < MIN_LOT_USDT and pos_value_usdt > 0:
                 logging.warning(
-                    f'👻 [{strategy}] {sym}: ghost position ({pos_value_usdt:.4f} USDT) — '
+                    f'👻 [{strategy} 1H] {sym}: ghost position ({pos_value_usdt:.4f} USDT) — '
                     f'принудительное закрытие'
                 )
                 try:
@@ -1588,7 +1590,7 @@ async def monitor_all():
                         params={'positionSide': pos_side, 'reduceOnly': True}
                     )
                     await tg(
-                        f'👻 <b>[{strategy}] {sym}</b>: ghost position закрыта\n'
+                        f'👻 <b>[{strategy} 1H] {sym}</b>: ghost position закрыта\n'
                         f'Остаток: {pos_value_usdt:.4f} USDT — слишком мал для SL ордера'
                     )
                 except Exception as _ge:
@@ -1605,7 +1607,7 @@ async def monitor_all():
             max_dur = MAX_TRADE_MIN_SMC if strategy == 'SMC' else MAX_TRADE_MIN_RSI
             if dur_min > max_dur and not pos.get('tp50_hit'):
                 logging.warning(
-                    f'⏰ [{strategy}] {sym}: таймаут {dur_min:.0f}мин>={max_dur}мин '
+                    f'⏰ [{strategy} 1H] {sym}: таймаут {dur_min:.0f}мин>={max_dur}мин '
                     f'pnl={pnl:+.2f}% — принудительное закрытие'
                 )
                 try:
@@ -1620,7 +1622,7 @@ async def monitor_all():
                     log_trade(pos, curr_p, pnl, 0.0, mfe_t, mae_t,
                               int(dur_min), 'Timeout')
                     await tg(
-                        f'⏰ <b>[{strategy}] {sym}</b>: таймаут {dur_min:.0f}мин\n'
+                        f'⏰ <b>[{strategy} 1H] {sym}</b>: таймаут {dur_min:.0f}мин\n'
                         f'Закрыто рыночным | PnL: {pnl:+.2f}%'
                     )
                 except Exception as _te:
@@ -1633,7 +1635,7 @@ async def monitor_all():
             # SL=1.2% → BE при +0.84% | SL=2.0% → BE при +1.4%
             # После TP50 → BE сразу (защита фиксированной прибыли)
             sl_dist_pct = pos.get('sl_dist_pct', 2.0)
-            be_thr_dyn  = max(sl_dist_pct * 0.7, 0.6)  # [FIX] 0.5R→0.7R
+            be_thr_dyn  = max(sl_dist_pct * 0.9, 0.8)  # [PROP] 0.7R→0.9R: поздняя защита, больше шансов на TP
             if pos.get('tp50_hit'):
                 be_thr_dyn = max(sl_dist_pct * 0.2, 0.3)  # после TP50 мгновенный BE
             if pnl >= be_thr_dyn and not pos.get('be_moved'):
@@ -1651,14 +1653,14 @@ async def monitor_all():
                                 'sl_order_id': sl_ord['id'],
                                 'be_moved': True})
                     save_all()
-                    await tg(f"🛡 <b>[{strategy}] {sym}</b>: SL → БУ "
+                    await tg(f"🛡 <b>[{strategy} 1H] {sym}</b>: SL → БУ "
                              f"<code>{new_sl:.6f}</code>  P&L: +{pnl:.2f}%")
                 except Exception as e:
                     logging.error(f"BE error {sym}: {e}")
 
             # ── TP 50% ─────────────────────────────────────────
             # ── Динамический TP50: при +1.0R (равно SL дистанции) ──
-            tp50_thr_dyn = max(sl_dist_pct * 1.0, 1.0)  # минимум +1%
+            tp50_thr_dyn = max(sl_dist_pct * 0.8, 0.8)  # [PROP] 1.0R→0.8R: ранняя фиксация, легче TP
             if pnl >= tp50_thr_dyn and not pos.get('tp50_hit'):
                 close_qty = round(real_qty * 0.5, 8)
                 remain    = round(real_qty - close_qty, 8)
@@ -1678,7 +1680,7 @@ async def monitor_all():
                     pos.update({'tp50_hit': True, 'current_qty': remain,
                                 'sl_order_id': sl_ord['id']})
                     save_all()
-                    await tg(f"💰 <b>[{strategy}] {sym}</b>: TP50% зафиксирован "
+                    await tg(f"💰 <b>[{strategy} 1H] {sym}</b>: TP50% зафиксирован "
                              f"P&L: +{pnl:.2f}%")
                 except Exception as e:
                     logging.error(f"TP50 error {sym}: {e}")
@@ -1727,7 +1729,7 @@ async def monitor_all():
                                 'sl_order_id': sl_ord['id'],
                                 'current_sl': trail_sl})
                     save_all()
-                    await tg(f"🏆 <b>[{strategy}] {sym}</b>: TP100 взят! "
+                    await tg(f"🏆 <b>[{strategy} 1H] {sym}</b>: TP100 взят! "
                              f"Трейлинг включён P&L: +{pnl:.2f}%")
                 except Exception as e:
                     logging.error(f"TP100 error {sym}: {e}")
@@ -1806,7 +1808,7 @@ async def monitor_all():
                          if daily_stats['trades'] > 0 else 0)
             result_tag = ' (TP✓)' if pos.get('tp50_hit') else (' (BE)' if is_be else (' (WIN)' if is_win else ' (SL)'))
             await tg(
-                f"{'✅' if is_win else ('⚖️' if is_be else '🛑')} <b>[{strategy}] {sym}</b> закрыта{result_tag}\n"
+                f"{'✅' if is_win else ('⚖️' if is_be else '🛑')} <b>[{strategy} 1H] {sym}</b> закрыта{result_tag}\n"
                 f"PnL: <code>{pnl_pct:+.2f}%</code> | Net: <code>{net_pnl:+.2f} USDT</code>\n"
                 f"📈 MFE {mfe_pct:.2f}% | 📉 MAE {mae_pct:.2f}% | ⏱ {dur_min}мин\n"
                 f"Вход: {entry:.6f} | Выход: {exit_p:.6f}\n"
@@ -1993,7 +1995,7 @@ async def send_daily_report():
 
 
 async def daily_reset():
-    global daily_stats, circuit_open
+    global daily_stats, circuit_open, _daily_report_sent
     today = datetime.now(timezone.utc).date()
     if daily_stats.get('stat_date') == today:
         return
